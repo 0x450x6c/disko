@@ -10,6 +10,36 @@ let
 in
 {
   options.disko = {
+    imageBuilderQemu = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      description = ''
+        the qemu emulator string used when building disk images via make-disk-image.nix.
+        Useful when using binfmt on your build host, and wanting to build disk
+        images for a foreign architecture
+      '';
+      default = null;
+      example = lib.literalExpression "\${pkgs.qemu_kvm}/bin/qemu-system-aarch64";
+    };
+    imageBuilderPkgs = lib.mkOption {
+      type = lib.types.attrs;
+      description = ''
+        the pkgs instance used when building disk images via make-disk-image.nix.
+        Useful when the config's kernel won't boot in the image-builder.
+      '';
+      default = pkgs;
+      defaultText = lib.literalExpression "pkgs";
+      example = lib.literalExpression "pkgs";
+    };
+    imageBuilderKernelPackages = lib.mkOption {
+      type = lib.types.attrs;
+      description = ''
+        the kernel used when building disk images via make-disk-image.nix.
+        Useful when the config's kernel won't boot in the image-builder.
+      '';
+      default = config.boot.kernelPackages;
+      defaultText = lib.literalExpression "config.boot.kernelPackages";
+      example = lib.literalExpression "pkgs.linuxPackages_testing";
+    };
     extraRootModules = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       description = ''
@@ -69,6 +99,15 @@ in
       type = lib.types.bool;
       default = false;
     };
+    testMode = lib.mkOption {
+      internal = true;
+      description = ''
+        this is true if the system is being run in test mode.
+        like a vm test or an interactive vm
+      '';
+      type = lib.types.bool;
+      default = false;
+    };
     tests = {
       efi = lib.mkOption {
         description = ''
@@ -120,6 +159,11 @@ in
         efi = cfg.tests.efi;
         extraSystemConfig = cfg.tests.extraConfig;
         extraTestScript = cfg.tests.extraChecks;
+      };
+
+      vmWithDisko = diskoLib.makeVMRunner {
+        inherit pkgs;
+        nixosConfig = args;
       };
     };
 

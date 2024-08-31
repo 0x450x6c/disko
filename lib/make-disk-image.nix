@@ -1,24 +1,32 @@
 { nixosConfig
 , diskoLib
-, pkgs ? nixosConfig.pkgs
+, pkgs ? nixosConfig.config.disko.imageBuilderPkgs
 , lib ? pkgs.lib
 , name ? "${nixosConfig.config.networking.hostName}-disko-images"
 , extraPostVM ? nixosConfig.config.disko.extraPostVM
 , checked ? false
+, copyNixStore ? true
+, testMode ? false
+, extraConfig ? { }
 }:
 let
   vmTools = pkgs.vmTools.override {
     rootModules = [ "9p" "9pnet_virtio" "virtio_pci" "virtio_blk" ] ++ nixosConfig.config.disko.extraRootModules;
+    customQemu = nixosConfig.config.disko.imageBuilderQemu;
     kernel = pkgs.aggregateModules
-      (with nixosConfig.config.boot.kernelPackages; [ kernel ]
+      (with nixosConfig.config.disko.imageBuilderKernelPackages; [ kernel ]
         ++ lib.optional (lib.elem "zfs" nixosConfig.config.disko.extraRootModules) zfs);
   };
   cleanedConfig = diskoLib.testLib.prepareDiskoConfig nixosConfig.config diskoLib.testLib.devices;
   systemToInstall = nixosConfig.extendModules {
-    modules = [{
-      disko.devices = lib.mkForce cleanedConfig.disko.devices;
-      boot.loader.grub.devices = lib.mkForce cleanedConfig.boot.loader.grub.devices;
-    }];
+    modules = [
+      extraConfig
+      {
+        disko.testMode = true;
+        disko.devices = lib.mkForce cleanedConfig.disko.devices;
+        boot.loader.grub.devices = lib.mkForce cleanedConfig.boot.loader.grub.devices;
+      }
+    ];
   };
   dependencies = with pkgs; [
     bash
@@ -48,6 +56,7 @@ let
     rootPaths = [ systemToInstall.config.system.build.toplevel ];
   };
   partitioner = ''
+    set -efux
     # running udev, stolen from stage-1.sh
     echo "running udev..."
     ln -sfn /proc/self/fd /dev/fd
@@ -63,10 +72,13 @@ let
     udevadm trigger --action=add
     udevadm settle
 
+    ${lib.optionalString testMode ''
+      export IN_DISKO_TEST=1
+    ''}
     ${systemToInstall.config.system.build.diskoScript}
   '';
 
-  installer = ''
+  installer = lib.optionalString copyNixStore ''
     # populate nix db, so nixos-install doesn't complain
     export NIX_STATE_DIR=${systemToInstall.config.disko.rootMountPoint}/nix/var/nix
     nix-store --load-db < "${closureInfo}/registration"
